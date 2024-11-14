@@ -1,6 +1,6 @@
 import socket
 import sys
-from threading import Thread
+from threading import Thread, Lock
 import sqlite3
 
 # Server IP and Port
@@ -15,13 +15,14 @@ server.listen(100)
 print(f"Server started on {IP_address}:{Port}")
 
 list_of_clients = []
+lock = Lock()  # Thread lock for shared resources
 
 # Database connection
 def db_connection():
     conn = sqlite3.connect('Secure_Chatting_Application_DB.db')
     return conn
 
-# Initialize the database and create tables if they don't exist
+# Initialize the database
 def initialize_db():
     conn = db_connection()
     cursor = conn.cursor()
@@ -65,7 +66,7 @@ def login_user(username, password):
     conn.close()
     return user is not None
 
-# Retrieve all previous messages
+# Get previous messages
 def get_previous_messages():
     conn = db_connection()
     cursor = conn.cursor()
@@ -74,7 +75,7 @@ def get_previous_messages():
     conn.close()
     return messages
 
-# Store a new message in the database
+# Store a new message
 def store_message(sender, message):
     conn = db_connection()
     cursor = conn.cursor()
@@ -93,19 +94,19 @@ def clientthread(conn, addr):
             if message:
                 msg = message.decode('utf-8').strip()
                 if msg.startswith("REGISTER"):
-                    _, username, password = msg.split()
+                    _, username, password = msg.split(maxsplit=2)
                     if register_user(username, password):
                         conn.send(b"Registration successful! Please login.\n")
                     else:
                         conn.send(b"Username already exists. Enter a different username.\n")
                 elif msg.startswith("LOGIN"):
-                    _, username, password = msg.split()
+                    _, username, password = msg.split(maxsplit=2)
                     if login_user(username, password):
                         conn.send(b"Login successful! You can now start chatting.\n")
                         authenticated = True
-                        list_of_clients.append((conn, username))  # Add authenticated client and their username
+                        with lock:
+                            list_of_clients.append((conn, username))
 
-                        # Send previous messages to the user
                         previous_messages = get_previous_messages()
                         for sender, msg, timestamp in previous_messages:
                             conn.send(f"{sender} ({timestamp}): {msg}\n".encode('utf-8'))
@@ -123,14 +124,13 @@ def clientthread(conn, addr):
             remove(conn, addr)
             break
 
-    # Start chat mode only if authenticated
     while authenticated:
         try:
             message = conn.recv(2048)
             if message:
                 decoded_message = message.decode('utf-8')
                 print(f"<{username}> {decoded_message}")
-                store_message(username, decoded_message)  # Store the message in the database
+                store_message(username, decoded_message)
                 broadcast(f"{username}: {decoded_message}", conn)
             else:
                 remove(conn, addr)
@@ -145,25 +145,27 @@ def clientthread(conn, addr):
             break
 
 def broadcast(message, connection):
-    for client, _ in list_of_clients:
-        if client != connection:
-            try:
-                client.send(message.encode('utf-8'))
-            except Exception as e:
-                print(f"Error broadcasting message to client: {e}")
-                client.close()
-                remove(client, None)
+    with lock:
+        for client, _ in list_of_clients:
+            if client != connection:
+                try:
+                    client.send(message.encode('utf-8'))
+                except Exception as e:
+                    print(f"Error broadcasting message to client: {e}")
+                    client.close()
+                    remove(client, None)
 
 def remove(connection, addr=None):
-    for client, username in list_of_clients:
-        if client == connection:
-            list_of_clients.remove((client, username))
-            if addr:
-                print(f"Client {addr[0]} ({username}) disconnected.")
-            else:
-                print("A client disconnected.")
-            connection.close()
-            break
+    with lock:
+        for client, username in list_of_clients:
+            if client == connection:
+                list_of_clients.remove((client, username))
+                if addr:
+                    print(f"Client {addr[0]} ({username}) disconnected.")
+                else:
+                    print("A client disconnected.")
+                connection.close()
+                break
 
 while True:
     conn, addr = server.accept()
