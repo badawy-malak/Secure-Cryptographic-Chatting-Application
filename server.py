@@ -1,177 +1,108 @@
+# import socket library
 import socket
-import sys
-from threading import Thread, Lock
-import sqlite3
-
-# Server IP and Port
-IP_address = "127.0.0.1"
-Port = 12345
-
-# Create a socket object
-server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-server.bind((IP_address, Port))
-server.listen(100)
-print(f"Server started on {IP_address}:{Port}")
-
-list_of_clients = []
-lock = Lock()  # Thread lock for shared resources
-
-# Database connection
-def db_connection():
-    conn = sqlite3.connect('Secure_Chatting_Application_DB.db')
-    return conn
-
-# Initialize the database
-def initialize_db():
-    conn = db_connection()
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            username TEXT PRIMARY KEY,
-            password TEXT NOT NULL
-        )
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS messages (
-            sender TEXT,
-            message TEXT,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    conn.commit()
+ 
+# import threading library
+import threading
+ 
+# Choose a port that is free
+PORT = 5000
+ 
+# An IPv4 address is obtained
+# for the server.
+SERVER = socket.gethostbyname(socket.gethostname())
+ 
+# Address is stored as a tuple
+ADDRESS = (SERVER, PORT)
+ 
+# the format in which encoding
+# and decoding will occur
+FORMAT = "utf-8"
+ 
+# Lists that will contains
+# all the clients connected to
+# the server and their names.
+clients, names = [], []
+ 
+# Create a new socket for
+# the server
+server = socket.socket(socket.AF_INET,
+                       socket.SOCK_STREAM)
+ 
+# bind the address of the
+# server to the socket
+server.bind(ADDRESS)
+ 
+# function to start the connection
+ 
+ 
+def startChat():
+ 
+    print("server is working on " + SERVER)
+ 
+    # listening for connections
+    server.listen()
+ 
+    while True:
+ 
+        # accept connections and returns
+        # a new connection to the client
+        #  and  the address bound to it
+        conn, addr = server.accept()
+        conn.send("NAME".encode(FORMAT))
+ 
+        # 1024 represents the max amount
+        # of data that can be received (bytes)
+        name = conn.recv(1024).decode(FORMAT)
+ 
+        # append the name and client
+        # to the respective list
+        names.append(name)
+        clients.append(conn)
+ 
+        print(f"Name is :{name}")
+ 
+        # broadcast message
+        broadcastMessage(f"{name} has joined the chat!".encode(FORMAT))
+ 
+        conn.send('Connection successful!'.encode(FORMAT))
+ 
+        # Start the handling thread
+        thread = threading.Thread(target=handle,
+                                  args=(conn, addr))
+        thread.start()
+ 
+        # no. of clients connected
+        # to the server
+        print(f"active connections {threading.activeCount()-1}")
+ 
+# method to handle the
+# incoming messages
+ 
+ 
+def handle(conn, addr):
+ 
+    print(f"new connection {addr}")
+    connected = True
+ 
+    while connected:
+          # receive message
+        message = conn.recv(1024)
+ 
+        # broadcast message
+        broadcastMessage(message)
+ 
+    # close the connection
     conn.close()
-
-initialize_db()
-
-# User registration
-def register_user(username, password):
-    conn = db_connection()
-    cursor = conn.cursor()
-    try:
-        cursor.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, password))
-        conn.commit()
-        return True
-    except sqlite3.IntegrityError:
-        return False
-    finally:
-        conn.close()
-
-# User login
-def login_user(username, password):
-    conn = db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM users WHERE username=? AND password=?", (username, password))
-    user = cursor.fetchone()
-    conn.close()
-    return user is not None
-
-# Get previous messages
-def get_previous_messages():
-    conn = db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT sender, message, timestamp FROM messages ORDER BY timestamp")
-    messages = cursor.fetchall()
-    conn.close()
-    return messages
-
-# Store a new message
-def store_message(sender, message):
-    conn = db_connection()
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO messages (sender, message) VALUES (?, ?)", (sender, message))
-    conn.commit()
-    conn.close()
-
-def clientthread(conn, addr):
-    conn.send(b"Welcome to this chatroom! Please register or login.\n")
-    authenticated = False
-    username = None
-
-    while not authenticated:
-        try:
-            message = conn.recv(2048)
-            if message:
-                msg = message.decode('utf-8').strip()
-                if msg.startswith("REGISTER"):
-                    _, username, password = msg.split(maxsplit=2)
-                    if register_user(username, password):
-                        conn.send(b"Registration successful! Please login.\n")
-                    else:
-                        conn.send(b"Username already exists. Enter a different username.\n")
-                elif msg.startswith("LOGIN"):
-                    _, username, password = msg.split(maxsplit=2)
-                    if login_user(username, password):
-                        conn.send(b"Login successful! You can now start chatting.\n")
-                        authenticated = True
-                        with lock:
-                            list_of_clients.append((conn, username))
-
-                        previous_messages = get_previous_messages()
-                        for sender, msg, timestamp in previous_messages:
-                            conn.send(f"{sender} ({timestamp}): {msg}\n".encode('utf-8'))
-                    else:
-                        conn.send(b"Invalid username or password. Please try again.\n")
-            else:
-                remove(conn, addr)
-                break
-        except ConnectionResetError:
-            print(f"Client {addr[0]} disconnected abruptly.")
-            remove(conn, addr)
-            break
-        except Exception as e:
-            print(f"Error during authentication: {e}")
-            remove(conn, addr)
-            break
-
-    while authenticated:
-        try:
-            message = conn.recv(2048)
-            if message:
-                decoded_message = message.decode('utf-8')
-                print(f"<{username}> {decoded_message}")
-                store_message(username, decoded_message)
-                broadcast(f"{username}: {decoded_message}", conn)
-            else:
-                remove(conn, addr)
-                break
-        except ConnectionResetError:
-            print(f"Client {addr[0]} disconnected abruptly.")
-            remove(conn, addr)
-            break
-        except Exception as e:
-            print(f"Error during message handling: {e}")
-            remove(conn, addr)
-            break
-
-def broadcast(message, connection):
-    with lock:
-        for client, _ in list_of_clients:
-            if client != connection:
-                try:
-                    client.send(message.encode('utf-8'))
-                except Exception as e:
-                    print(f"Error broadcasting message to client: {e}")
-                    client.close()
-                    remove(client, None)
-
-def remove(connection, addr=None):
-    with lock:
-        for client, username in list_of_clients:
-            if client == connection:
-                list_of_clients.remove((client, username))
-                if addr:
-                    print(f"Client {addr[0]} ({username}) disconnected.")
-                else:
-                    print("A client disconnected.")
-                connection.close()
-                break
-
-while True:
-    conn, addr = server.accept()
-    print(f"{addr[0]} connected")
-    thread = Thread(target=clientthread, args=(conn, addr))
-    thread.start()
-
-conn.close()
-server.close()
+ 
+# method for broadcasting
+# messages to the each clients
+ 
+ 
+def broadcastMessage(message):
+    for client in clients:
+        client.send(message)
+ 
+ 
+# call the method to
+# begin the communication
+startChat()

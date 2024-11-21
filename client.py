@@ -1,135 +1,221 @@
+
 import socket
 import threading
-import tkinter as tk
-from tkinter import simpledialog, messagebox, scrolledtext
-import sys
-
-# Server connection details
-IP_address = "127.0.0.1"
-Port = 12345
-
-# Connect to the server
-server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-try:
-    server.connect((IP_address, Port))
-except ConnectionRefusedError:
-    messagebox.showerror("Error", "Unable to connect to the server. Please check if the server is running.")
-    sys.exit()
-
-# Function to receive messages from the server
-def receive_messages():
-    while True:
-        try:
-            message = server.recv(2048)
-            if message:
-                chat_text_area.config(state=tk.NORMAL)
-                chat_text_area.insert(tk.END, message.decode('utf-8') + '\n')
-                chat_text_area.yview(tk.END)
-                chat_text_area.config(state=tk.DISABLED)
-            else:
-                break
-        except Exception as e:
-            messagebox.showerror("Error", f"An error occurred while receiving messages: {e}")
-            server.close()
-            break
-
-# Function to send messages to the server
-def send_message(event=None):
-    message = message_entry.get().strip()
-    if message:
-        try:
-            server.send(message.encode('utf-8'))
-            chat_text_area.config(state=tk.NORMAL)
-            chat_text_area.insert(tk.END, f"<You>: {message}\n")
-            chat_text_area.yview(tk.END)
-            chat_text_area.config(state=tk.DISABLED)
-            message_entry.delete(0, tk.END)
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to send message: {e}")
-            server.close()
-
-# Function to handle login or registration
-def authenticate(action):
-    attempts = 0
-    max_attempts = 3
-
-    while attempts < max_attempts:
-        username = simpledialog.askstring("Input", f"Enter your username for {action}:")
-        password = simpledialog.askstring("Input", "Enter your password:", show='*')
-
-        if username and password:
+from tkinter import *
+from tkinter import font
+from tkinter import ttk
+ 
+# import all functions /
+#  everything from chat.py file
+# from chat import *
+ 
+PORT = 5050
+SERVER = "192.168.0.103"
+ADDRESS = (SERVER, PORT)
+FORMAT = "utf-8"
+ 
+# Create a new client socket
+# and connect to the server
+client = socket.socket(socket.AF_INET,
+                       socket.SOCK_STREAM)
+client.connect(ADDRESS)
+ 
+ 
+# GUI class for the chat
+class GUI:
+    # constructor method
+    def __init__(self):
+ 
+        # chat window which is currently hidden
+        self.Window = Tk()
+        self.Window.withdraw()
+ 
+        # login window
+        self.login = Toplevel()
+        # set the title
+        self.login.title("Login")
+        self.login.resizable(width=False,
+                             height=False)
+        self.login.configure(width=400,
+                             height=300)
+        # create a Label
+        self.pls = Label(self.login,
+                         text="Please login to continue",
+                         justify=CENTER,
+                         font="Helvetica 14 bold")
+ 
+        self.pls.place(relheight=0.15,
+                       relx=0.2,
+                       rely=0.07)
+        # create a Label
+        self.labelName = Label(self.login,
+                               text="Name: ",
+                               font="Helvetica 12")
+ 
+        self.labelName.place(relheight=0.2,
+                             relx=0.1,
+                             rely=0.2)
+ 
+        # create a entry box for
+        # tyoing the message
+        self.entryName = Entry(self.login,
+                               font="Helvetica 14")
+ 
+        self.entryName.place(relwidth=0.4,
+                             relheight=0.12,
+                             relx=0.35,
+                             rely=0.2)
+ 
+        # set the focus of the cursor
+        self.entryName.focus()
+ 
+        # create a Continue Button
+        # along with action
+        self.go = Button(self.login,
+                         text="CONTINUE",
+                         font="Helvetica 14 bold",
+                         command=lambda: self.goAhead(self.entryName.get()))
+ 
+        self.go.place(relx=0.4,
+                      rely=0.55)
+        self.Window.mainloop()
+ 
+    def goAhead(self, name):
+        self.login.destroy()
+        self.layout(name)
+ 
+        # the thread to receive messages
+        rcv = threading.Thread(target=self.receive)
+        rcv.start()
+ 
+    # The main layout of the chat
+    def layout(self, name):
+ 
+        self.name = name
+        # to show chat window
+        self.Window.deiconify()
+        self.Window.title("CHATROOM")
+        self.Window.resizable(width=False,
+                              height=False)
+        self.Window.configure(width=470,
+                              height=550,
+                              bg="#17202A")
+        self.labelHead = Label(self.Window,
+                               bg="#17202A",
+                               fg="#EAECEE",
+                               text=self.name,
+                               font="Helvetica 13 bold",
+                               pady=5)
+ 
+        self.labelHead.place(relwidth=1)
+        self.line = Label(self.Window,
+                          width=450,
+                          bg="#ABB2B9")
+ 
+        self.line.place(relwidth=1,
+                        rely=0.07,
+                        relheight=0.012)
+ 
+        self.textCons = Text(self.Window,
+                             width=20,
+                             height=2,
+                             bg="#17202A",
+                             fg="#EAECEE",
+                             font="Helvetica 14",
+                             padx=5,
+                             pady=5)
+ 
+        self.textCons.place(relheight=0.745,
+                            relwidth=1,
+                            rely=0.08)
+ 
+        self.labelBottom = Label(self.Window,
+                                 bg="#ABB2B9",
+                                 height=80)
+ 
+        self.labelBottom.place(relwidth=1,
+                               rely=0.825)
+ 
+        self.entryMsg = Entry(self.labelBottom,
+                              bg="#2C3E50",
+                              fg="#EAECEE",
+                              font="Helvetica 13")
+ 
+        # place the given widget
+        # into the gui window
+        self.entryMsg.place(relwidth=0.74,
+                            relheight=0.06,
+                            rely=0.008,
+                            relx=0.011)
+ 
+        self.entryMsg.focus()
+ 
+        # create a Send Button
+        self.buttonMsg = Button(self.labelBottom,
+                                text="Send",
+                                font="Helvetica 10 bold",
+                                width=20,
+                                bg="#ABB2B9",
+                                command=lambda: self.sendButton(self.entryMsg.get()))
+ 
+        self.buttonMsg.place(relx=0.77,
+                             rely=0.008,
+                             relheight=0.06,
+                             relwidth=0.22)
+ 
+        self.textCons.config(cursor="arrow")
+ 
+        # create a scroll bar
+        scrollbar = Scrollbar(self.textCons)
+ 
+        # place the scroll bar
+        # into the gui window
+        scrollbar.place(relheight=1,
+                        relx=0.974)
+ 
+        scrollbar.config(command=self.textCons.yview)
+ 
+        self.textCons.config(state=DISABLED)
+ 
+    # function to basically start the thread for sending messages
+    def sendButton(self, msg):
+        self.textCons.config(state=DISABLED)
+        self.msg = msg
+        self.entryMsg.delete(0, END)
+        snd = threading.Thread(target=self.sendMessage)
+        snd.start()
+ 
+    # function to receive messages
+    def receive(self):
+        while True:
             try:
-                server.send(f"{action} {username} {password}".encode('utf-8'))
-                response = server.recv(2048).decode('utf-8')
-                messagebox.showinfo("Server Response", response)
-
-                if "Registration successful!" in response:
-                    messagebox.showinfo("Info", "Registration successful. Please log in.")
-                    return
-                elif "Login successful!" in response:
-                    open_chat_window()
-                    return
+                message = client.recv(1024).decode(FORMAT)
+ 
+                # if the messages from the server is NAME send the client's name
+                if message == 'NAME':
+                    client.send(self.name.encode(FORMAT))
                 else:
-                    attempts += 1
-                    if attempts < max_attempts:
-                        messagebox.showwarning("Authentication Failed", f"Incorrect credentials. You have {max_attempts - attempts} attempt(s) left.")
-                    else:
-                        messagebox.showerror("Authentication Failed", "You have exceeded the maximum number of attempts.")
-                        break
-            except Exception as e:
-                messagebox.showerror("Error", f"An error occurred during authentication: {e}")
-                server.close()
-                sys.exit()
-        else:
-            messagebox.showwarning("Input Required", "Both username and password are required.")
-
-# Function to open the chat window after successful login
-def open_chat_window():
-    global chat_window, chat_text_area, message_entry
-
-    auth_window.destroy()
-    chat_window = tk.Tk()
-    chat_window.title("Chat Room")
-    chat_window.protocol("WM_DELETE_WINDOW", on_close)
-
-    chat_text_area = scrolledtext.ScrolledText(chat_window, state='disabled', wrap=tk.WORD)
-    chat_text_area.pack(padx=10, pady=5, fill=tk.BOTH, expand=True)
-
-    message_entry = tk.Entry(chat_window)
-    message_entry.pack(padx=10, pady=5, fill=tk.X)
-    message_entry.bind("<Return>", send_message)
-
-    send_button = tk.Button(chat_window, text="Send", command=send_message)
-    send_button.pack(pady=5)
-
-    threading.Thread(target=receive_messages, daemon=True).start()
-
-    chat_window.mainloop()
-
-# Function to close the application gracefully
-def on_close():
-    try:
-        server.send(b"/quit")
-        server.close()
-    except:
-        pass
-    if 'chat_window' in globals() and chat_window:
-        chat_window.destroy()
-    sys.exit()
-
-# Initial window for login/registration
-auth_window = tk.Tk()
-auth_window.title("Welcome to Chat App")
-auth_window.protocol("WM_DELETE_WINDOW", on_close)
-
-welcome_label = tk.Label(auth_window, text="Welcome! Please choose an option:", font=("Helvetica", 14))
-welcome_label.pack(pady=10)
-
-login_button = tk.Button(auth_window, text="Login", command=lambda: authenticate("LOGIN"))
-login_button.pack(pady=5)
-
-register_button = tk.Button(auth_window, text="Register", command=lambda: authenticate("REGISTER"))
-register_button.pack(pady=5)
-
-auth_window.mainloop()
+                    # insert messages to text box
+                    self.textCons.config(state=NORMAL)
+                    self.textCons.insert(END,
+                                         message+"\n\n")
+ 
+                    self.textCons.config(state=DISABLED)
+                    self.textCons.see(END)
+            except:
+                # an error will be printed on the command line or console if there's an error
+                print("An error occurred!")
+                client.close()
+                break
+ 
+    # function to send messages
+    def sendMessage(self):
+        self.textCons.config(state=DISABLED)
+        while True:
+            message = (f"{self.name}: {self.msg}")
+            client.send(message.encode(FORMAT))
+            break
+ 
+ 
+# create a GUI class object
+g = GUI()
